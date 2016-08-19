@@ -1,7 +1,5 @@
-# utils
-# this file is a start
+## utils
+# contains commonly used tools or method
 
-util : contains my usually used function or method
-mergeJson.js: a file writen to merger style-json files
-gulp : contains gulp related file and work
-pf :shanghai2
+1) mergeJson.js: a file writen to merger style-json files
+2) gulp : contains gulp related file and work work
