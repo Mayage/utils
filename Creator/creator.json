@@ -1,0 +1,9 @@
+{
+    "description": "",
+    "services": [{
+		"name": "CarServiceProxy",
+		"busName": "com.saic.ivi.CarService",
+		"busPath": "/com/saic/ivi/CarService",
+		"filePath": "com.saic.ivi.CarService.xml"
+	}]
+}
