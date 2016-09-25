@@ -1,0 +1,236 @@
+"use strict";
+/* jshint camelcase:false */
+var lang = require("caf/core/lang");
+var UBus = require("ubus");
+var Event = require("caf/core/Event");
+
+var <%= node.className %> = lang.extend(Event, {
+    constructor: function() {
+        this._busName = "<%= node.busName %>";
+  		this._busPath = "<%= node.busPath %>";
+        this._ubus = new UBus("dbus");
+        this._signals=[];
+        this._iface = this._ubus.createInterface(this._busName, this._busPath, "<%= node.interface[0].$.name %>"); 
+   
+        <%= node.className %>.superclass.constructor.apply(this);
+        return this;
+    },
+    <% createSignals(node.className,node.interface[0].signal) %>
+
+    on:function(event){
+    	if(!this._signals[event]){
+    		if(this["add"+event]){
+    			this["add"+event]();
+    			this._signals[event]=true;
+    		}else
+    		{
+    			logger.E("sigal do not exist",event);
+    		}
+    	}
+    	<%= node.className %>.superclass.on.apply(this,arguments);
+    }
+    
+});
+
+module.exports = <%= node.className %>;
+
+<%= createMethods(node.className,node.interface[0].method) %>
+
+<% function createSignals(className,signals){ %>
+	<% if (signals&&signals.length) { %>
+	    <% signals.forEach(function(signal){ %>
+	    add<%= signal.$.name%>:function(){
+			var self=this;
+			this._iface.addSignalRule({
+	            "name": "<%= signal.$.name%>"
+	        }, function(err, msg) {
+	            if (err) {
+	                logger.D("Signal error in <%= className %>::<%= signal.$.name%>" + err.name + ":" + err.message + ":" + err.type);
+	            } else {
+	                try {
+	                  	<% var result=readSignal(signal.$.name,signal.arg) %>
+	                  	<%= result.output %>
+	                  	<% if (signal.arg) { %>
+	                  		self.emit("<%= signal.$.name%>",<%= result.param %>);
+	                  		 logger.D("Signal received in <%= className %>:: <%= signal.$.name%> : ", <%= result.param %>);
+	                  	<% } else{ %>
+	                  		self.emit("<%= signal.$.name%>");
+	                  		 logger.D("Signal received in <%= className %>:: <%= signal.$.name%>  ");
+
+	                  	<% } %>
+	                   
+	                   
+	                } catch (ev) {
+	                    logger.D("Signal parse error in <%= className %>:: <%= signal.$.name%> : ", ev.stack);
+	                }
+	               
+	            }
+	             msg.destroy();
+	        });
+	     },
+	    <% }) %>
+	<% } %>
+<% } %>
+
+<% function createMethods(className,methods){ %>
+	<% if (methods.length) { %>
+	    <% methods.forEach(function(method){ %>
+
+	      	<%= className %>.prototype.<%= method.$.name %> = function(<%= args(method.arg) %>) {
+	   			var self = this;
+	   			return new Promise(function(resolve, reject) {
+	        		var msg = self._iface.createMethodCallMessage("<%= method.$.name %>");
+	        		logger.D("Invoke method in <%= className %> ::<%= method.$.name %>:");
+	        		<%= writeArgs(method.arg) %>
+	        		self._iface.sendMethodCallMessage(msg, function(err, reply) {
+	           			if (err&&err.readString) {
+	                		reject(err.readString());
+	           		 	} else {
+	           		 		try{
+	           		 		var rets=reply;
+	               			<% var result = readResult(method.arg) %>
+	               			<%= result.output %>
+	               			<% if(result.param) {%>
+	               			logger.D("Invoke result  in <%= className %>:: <%= method.$.name%> : ",<%= result.param %>);
+	               			<% } %>
+	               			reply.destroy();
+					}
+	               			catch(e){
+	               				   logger.D("Invoke result parse error in <%= className %>:: <%= method.$.name%> : ", e);
+	               			}
+	               			
+	           		 	}
+	           		 	
+	        		}, 20000);
+	        		msg.destroy();
+	    		});
+			};
+
+	    <% }) %>
+	<% } %>
+<% } %>
+
+<% function args(args) {
+    var input = "";
+    if(args&&args.length){
+	    args.forEach(function(arg) {
+	        if (arg.$.direction === "in") {
+	            input = input + arg.$.name + ", ";
+	        }
+	    });
+	}
+    if (input) {
+        var s = input.lastIndexOf(",");
+        input = input.substring(0, s);
+    }
+    return input;
+} %>
+
+<% function writeArgs(args) {
+    var input = "";
+    var type="";
+    if(args&&args.length){
+	    args.forEach(function(arg) {
+	        if (arg.$.direction === "in") {
+	        	switch(arg.$.type){
+	        		case "s":{
+	        			type="String";
+	        			break;
+	        		}
+	        		case "i":{
+	        			type="Int32";
+	        			break;
+	        		}
+	        		case "b":{
+	        			type="Bool";
+	        			break;
+	        		}
+	        		default:{
+	        			type="String";
+	        			break;
+	        		}
+	        	}
+	            input = input +"msg.write"+type+"("+arg.$.name + ");\n";
+	        }
+	    });
+	}
+    return input;
+} %>
+<% function readResult(args) {
+    var output = "";
+    var param="";
+    var type="";
+    if(args&&args.length){
+	    args.forEach(function(arg) {
+	        if (arg.$.direction === "out") {
+	        	switch(arg.$.type){
+	        		case "s":{
+	        			type="String";
+	        			break;
+	        		}
+	        		case "i":{
+	        			type="Int32";
+	        			break;
+	        		}
+	        		case "b":{
+	        			type="Bool";
+	        			break;
+	        		}
+	        		default:{
+	        			type="String";
+	        			break;
+	        		}
+	        	}
+	            output = output +"var "+arg.$.name+" = rets.read"+type+"();\n";
+	            param = param + arg.$.name + ", ";
+	        }
+	    });
+	}
+	 if (param) {
+        var s = param.lastIndexOf(",");
+        param = param.substring(0, s);
+    }
+    output=output + "resolve("+param+");";
+      var result={};
+    result.output=output;
+    result.param=param;
+    return result;
+} %>
+
+<% function readSignal(signalName,args) {
+    var output = "";
+    var param="";
+    var type="";
+    if(args&&args.length){
+	    args.forEach(function(arg) {
+	        	switch(arg.$.type){
+	        		case "s":{
+	        			type="String";
+	        			break;
+	        		}
+	        		case "i":{
+	        			type="Int32";
+	        			break;
+	        		}
+	        		case "b":{
+	        			type="Bool";
+	        			break;
+	        		}
+	        		default:{
+	        			type="String";
+	        			break;
+	        		}
+	        	}
+	            output = output +"var "+arg.$.name+" = msg.read"+type+"();\n";
+	            param = param + arg.$.name + ", ";
+	    });
+	}
+	 if (param) {
+        var s = param.lastIndexOf(",");
+        param = param.substring(0, s);
+    }
+    var result={};
+    result.output=output;
+    result.param=param;
+    return result;
+} %>
